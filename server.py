@@ -107,13 +107,15 @@ def _preprocess_for_ocr(img: Image.Image) -> np.ndarray:
     return bgr
 
 
-def _ocr_tiff_pages(fp: str) -> str:
+def _ocr_tiff_pages(fp: str) -> Tuple[str, float]:
     """
-    Run OCR across all frames of a TIFF, return joined text.
+    Run OCR across all frames of a TIFF, return joined text and score tuple.
     """
     ocr = _init_ocr()
     
     texts = []
+    scores = []
+
     with Image.open(fp) as im:
         for _, frame in enumerate(ImageSequence.Iterator(im), start=1):
             bgr = _preprocess_for_ocr(frame)
@@ -125,6 +127,18 @@ def _ocr_tiff_pages(fp: str) -> str:
             for res in result:
                 if hasattr(res, 'json') and res.json:
                     json_data = res.json
+                    if 'res' in json_data:
+                        res_data = json_data['res']
+
+                        if "rec_texts" in res_data:
+                            page_texts = res_data['rec_texts']
+                            for text in page_texts:
+                                if text:
+                                    texts.append(text)
+                        if 'rec_scores' in res_data:
+                            page_sccores = res_data['rec_scores']
+                            scores.extend(page_sccores)
+
                     if 'res' in json_data and 'rec_texts' in json_data['res']:
                         for text in json_data['res']['rec_texts']:
                             if text:
@@ -135,8 +149,10 @@ def _ocr_tiff_pages(fp: str) -> str:
         combined = "\n\n".join(
             t for t in texts if t
         ).strip()
+        
+        avg_score = sum(scores) / len(scores) if scores else 0.0
 
-        return combined
+        return combined, avg_score
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -169,8 +185,8 @@ async def ocr_tiff(file: UploadFile = File(...)):
 
     try:
         # Run the OCR work in a thread to avoid blocking the event loop
-        text = await run_in_threadpool(_ocr_tiff_pages, tmp_path)
-        return JSONResponse({"text": text})
+        text, score = await run_in_threadpool(_ocr_tiff_pages, tmp_path)
+        return JSONResponse({"text": text, "score": score})
     except RuntimeError as e:
         # Paddle init or inference error → custom status
         return JSONResponse({"error": str(e)}, status_code=CUSTOM_PADDLE_STATUS)
