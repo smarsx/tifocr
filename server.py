@@ -197,10 +197,14 @@ async def ocr_tiff(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8000"))
+    workers = int(os.environ.get("WORKERS", "1"))
+    print(f"host: {host}, port: {port}, workers: {workers}")
     uvicorn.run(
         "server:app",
-        host=os.environ.get("HOST", "0.0.0.0"),
-        port=int(os.environ.get("PORT", "8000")),
+        host=host,
+        port=port,
+        workers=workers,
         reload=False,
-        workers=int(os.environ.get("WORKERS", "1")),
     )
