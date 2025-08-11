@@ -1,7 +1,7 @@
 import os
 import tempfile
 import logging
-from typing import List
+from typing import List, Tuple
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -14,6 +14,12 @@ import cv2
 
 # Lazy import so the app can start even if paddle isn't ready yet
 from paddleocr import PaddleOCR  # type: ignore
+
+# Thread-safety: Paddle isn't guaranteed thread-safe across threads;
+# use a single shared instance + simple mutex.
+import threading
+_ocr_lock = threading.Lock()
+_init_lock = threading.Lock()
 
 
 @asynccontextmanager
@@ -42,27 +48,16 @@ CUSTOM_PADDLE_STATUS = 699  # non-standard status for "Paddle-OCR error"
 _ocr = None
 _initialized = False
 
-# Thread-safety: Paddle isn't guaranteed thread-safe across threads;
-# use a single shared instance + simple mutex.
-import threading
-_ocr_lock = threading.Lock()
-
 # ── Utilities ─────────────────────────────────────────────────────────────────
 def _init_ocr() -> PaddleOCR:
-    """
-    Initialize PaddleOCR.
-    This may download weights on first run.
-    """
     global _ocr, _initialized
     if _initialized and _ocr is not None:
         return _ocr
-
-    try:
-        _ocr = PaddleOCR(lang='en')
-        _initialized = True
-        return _ocr
-    except Exception as e:
-        raise RuntimeError(f"PaddleOCR init failed: {e}") from e
+    with _init_lock:
+        if not _initialized or _ocr is None:
+            _ocr = PaddleOCR(lang='en')  # set use_gpu as needed
+            _initialized = True
+    return _ocr
 
 
 def _img_to_bgr_array(img: Image.Image) -> np.ndarray:
