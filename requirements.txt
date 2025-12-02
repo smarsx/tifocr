@@ -5,3 +5,4 @@ pillow
 opencv-python-headless 
 numpy
 python-multipart
+pdf2image
